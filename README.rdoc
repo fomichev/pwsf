@@ -1,2 +1,5 @@
 = TODO
 http://sourceforge.net/p/passwordsafe/code/5210/tree/trunk/pwsafe/pwsafe/docs/formatV3.txt
+
+= Linux
+xclip

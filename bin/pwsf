@@ -82,7 +82,7 @@ raise "Invalid DB path '#{options[:db_path]}'" unless File.exists?(options[:db_p
 raise "Please specify command" if ARGV.size == 0
 
 op = ARGV.shift
-raise "Invalid command '#{op}'" unless [ 'copy', 'query', 'list' ].include? op
+raise "Invalid command '#{op}'" unless [ 'show', 'copy', 'query', 'list' ].include? op
 
 keychain = PasswordSafe::KeychainV3.new(options[:db_path], true)
 
@@ -114,6 +114,17 @@ def copy(keychain, r)
   Clipboard.copy(r.username)
 end
 
+def show(r)
+  skip = ['pwd_expiry_int', 'last_modify_time_time', 'create_time', 'pwd_history', 'uuid', 'dclick_action', 'sdclick_action' ]
+
+  puts "#{r.name}:"
+  r.each do |k, v|
+    next if skip.include? k
+
+    puts "#{k}=#{v.inspect}"
+  end
+end
+
 def op_copy(keychain, re)
   found = []
 
@@ -132,6 +143,21 @@ def op_copy(keychain, re)
 
     idx = keychain.ask("Entry index:")
     copy(keychain, found[idx.to_i])
+  end
+end
+
+def op_show(keychain, re)
+  found = []
+
+  re = Regexp.new(re, Regexp::IGNORECASE)
+
+  keychain.each { |r| found << r if r.name =~ re }
+
+  if found.size == 0
+    puts "Nothing found!"
+    exit 1
+  else
+    found.each { |r| show(r) }
   end
 end
 
@@ -191,6 +217,12 @@ when 'copy'
   re = ARGV.shift
 
   op_copy(keychain, re)
+when 'show'
+  raise "Please specify regexp to search for" if ARGV.size == 0
+
+  re = ARGV.shift
+
+  op_show(keychain, re)
 when 'diff'
   raise "TODO"
 else
