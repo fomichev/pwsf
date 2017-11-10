@@ -76,7 +76,10 @@ module PasswordSafe
       data = io.read(len)
       rem_data = io.read(16 - rem) if rem != 0
 
+      #puts "LEN = #{len}"
+      #puts "mac < #{mac.digest.inspect}"
       mac.update(data)
+      #puts "mac > #{mac.digest.inspect}"
 
       d = @header ? @@h : @@r
 
@@ -205,22 +208,26 @@ module PasswordSafe
         hp = f.read(32).unpack('a32').first
         raise Error, "Invalid password" if hp != OpenSSL::Digest::SHA256.digest(p)
 
-        b1 = f.read(16).unpack('a16').first
-        b2 = f.read(16).unpack('a16').first
-
+        b12 = f.read(32).unpack('a32').first
         b3 = f.read(16).unpack('a16').first
         b4 = f.read(16).unpack('a16').first
 
         iv = f.read(16)
 
+        #puts "p:",p.inspect
+        #puts "b12:",b12.inspect
+
         ecb = Twofish.new(p, :mode => :ecb)
-        k = ecb.decrypt(b1 + b2)
+        k = ecb.decrypt(b12)
         l = ecb.decrypt(b3 + b4)
+
+        #puts "k:",k.inspect
 
         cbc = Twofish.new(k, :mode => :cbc, :iv => iv)
         data = f.read
         eof = data.index("PWS3-EOFPWS3-EOF")
         hmac = data[eof + 16,32].unpack("a*").first
+        #puts "hmac:", hmac.inspect
         raise Error, "Invalid data - couldn't find EOF marker" unless eof
 
         return l, hmac, cbc.decrypt(data[0..eof-1])
