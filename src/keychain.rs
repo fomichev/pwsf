@@ -1,8 +1,9 @@
+use std;
 use std::str;
 use std::fs::File;
 use std::io::Cursor;
 use std::io::Read;
-use std::io::Error;
+use std::io::{Error, ErrorKind};
 use byteorder::{ReadBytesExt, LittleEndian};
 
 use crypto;
@@ -13,6 +14,8 @@ pub struct V3 {
 	path: String,
 	salt: [u8; 32],
 	iter: u32,
+    header: Option<item::Item>,
+    items: Vec<item::Item>,
 }
 
 impl V3 {
@@ -23,6 +26,8 @@ impl V3 {
 			path: path.to_string(),
 			salt: [0; 32],
 			iter: 0,
+            header: None,
+            items: Vec::new(),
 		}
     }
 
@@ -36,13 +41,23 @@ impl V3 {
 		Ok(())
 	}
 
-	fn check_password(&self, f: &mut File, password: &str) -> [u8; 32] {
+	fn check_password(&self, f: &mut File, password: &str) -> Option<[u8; 32]> {
 		let mut expected: [u8; 32] = [0; 32];
-		f.read_exact(&mut expected).unwrap();
+		match f.read_exact(&mut expected) {
+            Ok(_) => {
 
-		let got = crypto::stretch(password, &self.salt, self.iter);
-		assert_eq!(crypto::sha256(&got), expected);
-		got
+                let got = crypto::stretch(password, &self.salt, self.iter);
+                if crypto::sha256(&got) != expected {
+                    return None;
+                }
+
+                //assert_eq!(crypto::sha256(&got), expected);
+                return Some(got);
+
+            }
+            Err(_) => return None,
+        }
+
 	}
 
 	pub fn unlock(&mut self, _password: &str) -> Result<(), Error> {
@@ -54,9 +69,10 @@ impl V3 {
 		f.read_exact(&mut self.salt)?;
 		self.iter = f.read_u32::<LittleEndian>().unwrap();
 
-		println!("iter: {}", self.iter);
-
-		let p = self.check_password(&mut f, _password);
+		let stretched = match self.check_password(&mut f, _password) {
+            Some(p) => p,
+            None => return Err(Error::new(ErrorKind::Other, "oh no!")),
+        };
 
 		let mut b12: [u8; 32] = [0; 32];
 		f.read_exact(&mut b12).unwrap();
@@ -67,22 +83,14 @@ impl V3 {
 		let mut iv: [u8; 16] = [0; 16];
 		f.read_exact(&mut iv).unwrap();
 
-		let k = crypto::decrypt_block_ecb(&b12, &p);
-		let l = crypto::decrypt_block_ecb(&b34, &p);
-
-		println!("p={:?}", p);
-		println!("k={:?}", k);
-		println!("expected k=[64, ]");
+		let k = crypto::decrypt_block_ecb(&b12, &stretched);
+		let l = crypto::decrypt_block_ecb(&b34, &stretched);
 
 		let mut d: Vec<u8> = Vec::new();
 
 		f.read_to_end(&mut d).unwrap();
 
-
 		let eof = d.windows(16).position(|w| w == "PWS3-EOFPWS3-EOF".as_bytes()).unwrap();
-		println!("eof={} vs {}", eof, d.len());
-
-		println!("b12={:?}", b12);
 
 		crypto::decrypt_inplace(&mut d[0..eof], &k, &iv);
 
@@ -91,24 +99,29 @@ impl V3 {
 
         // header
         match item::parse(&mut mac, &item::HEADER, &mut c) {
-            Some(hdr) => println!("header {:?}", hdr),
+            Some(hdr) => self.header = Some(hdr),
             None => println!("GOT NOTHING!"), // TODO: fixme
         }
 
         // entries
 		loop {
             match item::parse(&mut mac, &item::DATA, &mut c) {
-                Some(item) => println!("data {:?}", item),
+                Some(item) => self.items.push(item),
                 None => break,
             }
 		}
 
 		let expected_hmac = &d[eof+16 .. eof+16+32];
         match mac.verify(expected_hmac) {
-            Ok(_) => println!("matches"),
+            Ok(_) => println!("MAC matches!!!"),
             Err(_) => println!("doesn't match"),
         }
 
 		Ok(())
 	}
+
+    #[cfg(test)]
+    pub fn len(&self) -> usize { self.items.len() }
+
+    pub fn iter(&self) -> std::slice::Iter<item::Item> { self.items.iter() }
 }

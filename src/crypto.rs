@@ -9,7 +9,7 @@ impl HMAC {
         use self::gcrypt::mac::{Mac, Algorithm};
 
         let mut h = Mac::new(Algorithm::HmacSha256).unwrap();
-        h.set_key(key);
+        h.set_key(key).unwrap();
 
         HMAC {
             mac: h,
@@ -22,20 +22,6 @@ impl HMAC {
 
     pub fn verify(&mut self, expected: &[u8]) -> Result<(), gcrypt::Error> {
         return self.mac.verify(expected);
-    }
-
-    pub fn prn(&mut self, prefix: &str) {
-        let mut buf: [u8; 32] = [0; 32];
-        self.mac.get_mac(&mut buf[..]).unwrap();
-		println!("{} hmac={:?}", prefix, buf);
-    }
-
-    // TODO(sdf): rename to verify and use builtin verify method
-    pub fn matches(&mut self, expected: &[u8]) -> bool {
-        let mut buf: [u8; 32] = [0; 32];
-        self.mac.get_mac(&mut buf[..]).unwrap();
-		println!("new hmac={:?}", buf);
-        return buf == expected;
     }
 }
 

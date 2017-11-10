@@ -18,12 +18,27 @@ pub enum Kind {
 	Username,
 	Notes,
 	Password,
+	PasswordHistory,
+	PasswordPolicy,
+	PasswordSymbols,
+	CreateTime,
+    AccessTime,
+    ExpiryTime,
+    ModifyTime,
+    SClickAction,
+    DClickAction,
+    Autotype,
+    RunCommand,
+    Protected,
+    Email,
 }
 
 #[derive(PartialEq,Eq,Hash,Debug,Clone,Copy)]
 pub enum Type {
 	Raw,
+	Byte,
 	Short,
+    Int,
 	Text,
 }
 
@@ -50,15 +65,30 @@ lazy_static! {
         m.insert(0x04, Def{kind: Kind::Username, tp: Type::Text });
         m.insert(0x05, Def{kind: Kind::Notes,    tp: Type::Text });
         m.insert(0x06, Def{kind: Kind::Password, tp: Type::Text });
+        m.insert(0x07, Def{kind: Kind::CreateTime, tp: Type::Int });
+        m.insert(0x09, Def{kind: Kind::AccessTime, tp: Type::Int });
+        m.insert(0x0a, Def{kind: Kind::ExpiryTime, tp: Type::Int });
+        m.insert(0x0c, Def{kind: Kind::ModifyTime, tp: Type::Int });
+        m.insert(0x0e, Def{kind: Kind::Autotype, tp: Type::Text });
+        m.insert(0x0f, Def{kind: Kind::PasswordHistory, tp: Type::Text });
+        m.insert(0x10, Def{kind: Kind::PasswordPolicy, tp: Type::Text });
+        m.insert(0x12, Def{kind: Kind::RunCommand, tp: Type::Text });
+        m.insert(0x13, Def{kind: Kind::DClickAction, tp: Type::Short });
+        m.insert(0x14, Def{kind: Kind::Email, tp: Type::Text });
+        m.insert(0x15, Def{kind: Kind::Protected, tp: Type::Byte });
+        m.insert(0x16, Def{kind: Kind::PasswordSymbols, tp: Type::Text });
+        m.insert(0x17, Def{kind: Kind::SClickAction, tp: Type::Short });
         m.insert(0xff, Def{kind: Kind::End,      tp: Type::Raw  });
         m
     };
 }
 
-#[derive(Debug)]
+#[derive(PartialEq,Eq,Hash,Debug,Clone)]
 pub enum Data {
 	Raw(Vec<u8>),
+	Byte(u8),
 	Short(u16),
+    Int(u32),
 	Text(String),
 }
 
@@ -73,7 +103,20 @@ pub struct Item {
     pub field: HashMap<Kind, Field>,
 }
 
-pub fn new(map: &HashMap<u8,Def>, val: u8, data: &[u8]) -> Field {
+impl Item {
+    #[cfg(test)]
+    pub fn get(&self, k: &Kind) -> Option<&Data> {
+        match self.field.get(k) {
+            None => return None,
+            Some(v) => return Some(&v.data),
+        }
+    }
+}
+
+//fn new(Vec<
+//Kind::UUID
+
+fn new_field(map: &HashMap<u8,Def>, val: u8, data: &[u8]) -> Field {
     match map.get(&val) {
         None => return Field{
             def: Def {
@@ -84,10 +127,22 @@ pub fn new(map: &HashMap<u8,Def>, val: u8, data: &[u8]) -> Field {
         },
         Some(def) => {
             match def.tp {
+                Type::Byte =>
+                    return Field{
+                        def: def.clone(),
+                        data: Data::Byte(data[0]),
+                    },
+
                 Type::Short =>
                     return Field{
                         def: def.clone(),
                         data: Data::Short(((data[1] as u16) << 8) | (data[0] as u16)),
+                    },
+
+                Type::Int =>
+                    return Field{
+                        def: def.clone(),
+                        data: Data::Int(((data[3] as u32) << 24) | ((data[2] as u32) << 16) | ((data[1] as u32) << 8) | (data[0] as u32)),
                     },
 
                 Type::Text =>
@@ -127,7 +182,7 @@ pub fn parse_field(mac: &mut crypto::HMAC, map: &HashMap<u8,Def>, c: &mut Cursor
 
     mac.update(&v[..]);
 
-    let i = Some(new(map, tp, &v[..]));
+    let i = Some(new_field(map, tp, &v[..]));
     skip_padding(c, len);
     return i;
 }
