@@ -59,26 +59,26 @@ lazy_static! {
 
     pub static ref DATA: HashMap<u8,Def> = {
         let mut m = HashMap::new();
-        m.insert(0x01, Def{kind: Kind::UUID,     tp: Type::Raw  });
-        m.insert(0x02, Def{kind: Kind::Group,    tp: Type::Text });
-        m.insert(0x03, Def{kind: Kind::Title,    tp: Type::Text });
-        m.insert(0x04, Def{kind: Kind::Username, tp: Type::Text });
-        m.insert(0x05, Def{kind: Kind::Notes,    tp: Type::Text });
-        m.insert(0x06, Def{kind: Kind::Password, tp: Type::Text });
-        m.insert(0x07, Def{kind: Kind::CreateTime, tp: Type::Int });
-        m.insert(0x09, Def{kind: Kind::AccessTime, tp: Type::Int });
-        m.insert(0x0a, Def{kind: Kind::ExpiryTime, tp: Type::Int });
-        m.insert(0x0c, Def{kind: Kind::ModifyTime, tp: Type::Int });
-        m.insert(0x0e, Def{kind: Kind::Autotype, tp: Type::Text });
-        m.insert(0x0f, Def{kind: Kind::PasswordHistory, tp: Type::Text });
-        m.insert(0x10, Def{kind: Kind::PasswordPolicy, tp: Type::Text });
-        m.insert(0x12, Def{kind: Kind::RunCommand, tp: Type::Text });
-        m.insert(0x13, Def{kind: Kind::DClickAction, tp: Type::Short });
-        m.insert(0x14, Def{kind: Kind::Email, tp: Type::Text });
-        m.insert(0x15, Def{kind: Kind::Protected, tp: Type::Byte });
-        m.insert(0x16, Def{kind: Kind::PasswordSymbols, tp: Type::Text });
-        m.insert(0x17, Def{kind: Kind::SClickAction, tp: Type::Short });
-        m.insert(0xff, Def{kind: Kind::End,      tp: Type::Raw  });
+        m.insert(0x01, Def{kind: Kind::UUID,            tp: Type::Raw   });
+        m.insert(0x02, Def{kind: Kind::Group,           tp: Type::Text  });
+        m.insert(0x03, Def{kind: Kind::Title,           tp: Type::Text  });
+        m.insert(0x04, Def{kind: Kind::Username,        tp: Type::Text  });
+        m.insert(0x05, Def{kind: Kind::Notes,           tp: Type::Text  });
+        m.insert(0x06, Def{kind: Kind::Password,        tp: Type::Text  });
+        m.insert(0x07, Def{kind: Kind::CreateTime,      tp: Type::Int   });
+        m.insert(0x09, Def{kind: Kind::AccessTime,      tp: Type::Int   });
+        m.insert(0x0a, Def{kind: Kind::ExpiryTime,      tp: Type::Int   });
+        m.insert(0x0c, Def{kind: Kind::ModifyTime,      tp: Type::Int   });
+        m.insert(0x0e, Def{kind: Kind::Autotype,        tp: Type::Text  });
+        m.insert(0x0f, Def{kind: Kind::PasswordHistory, tp: Type::Text  });
+        m.insert(0x10, Def{kind: Kind::PasswordPolicy,  tp: Type::Text  });
+        m.insert(0x12, Def{kind: Kind::RunCommand,      tp: Type::Text  });
+        m.insert(0x13, Def{kind: Kind::DClickAction,    tp: Type::Short });
+        m.insert(0x14, Def{kind: Kind::Email,           tp: Type::Text  });
+        m.insert(0x15, Def{kind: Kind::Protected,       tp: Type::Byte  });
+        m.insert(0x16, Def{kind: Kind::PasswordSymbols, tp: Type::Text  });
+        m.insert(0x17, Def{kind: Kind::SClickAction,    tp: Type::Short });
+        m.insert(0xff, Def{kind: Kind::End,             tp: Type::Raw   });
         m
     };
 }
@@ -104,17 +104,13 @@ pub struct Item {
 }
 
 impl Item {
-    #[cfg(test)]
-    pub fn get(&self, k: &Kind) -> Option<&Data> {
-        match self.field.get(k) {
+    pub fn get(&self, k: Kind) -> Option<&Data> {
+        match self.field.get(&k) {
             None => return None,
             Some(v) => return Some(&v.data),
         }
     }
 }
-
-//fn new(Vec<
-//Kind::UUID
 
 fn new_field(map: &HashMap<u8,Def>, val: u8, data: &[u8]) -> Field {
     match map.get(&val) {
@@ -206,7 +202,5 @@ pub fn parse(mac: &mut crypto::HMAC, map: &HashMap<u8, Def>, c: &mut Cursor<&[u8
             },
         }
     }
-    return Some(Item{
-        field: m,
-    });
+    return Some(Item{field: m});
 }

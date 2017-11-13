@@ -37,7 +37,6 @@ mod tests {
 
             // TODO: UUID
 
-
             // 0
             let mut m = HashMap::new();
             m.insert(item::Kind::CreateTime, item::Data::Int(1339168618));

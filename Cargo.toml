@@ -6,6 +6,9 @@ authors = ["Stanislav Fomichev <kernel@fomichev.me>"]
 [dependencies]
 byteorder = "1"
 lazy_static = "0.2"
+getopts = "0.2"
+rpassword = "1.0.0"
+regex = "0.2"
 
 [dependencies.gcrypt]
 version = "0.5"
