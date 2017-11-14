@@ -1,9 +1,9 @@
 use std;
 use std::str;
+use std::error::Error;
 use std::fs::File;
 use std::io::Cursor;
 use std::io::Read;
-use std::io::{Error, ErrorKind};
 use byteorder::{ReadBytesExt, LittleEndian};
 
 use crypto;
@@ -19,85 +19,174 @@ pub struct V3 {
 }
 
 impl V3 {
-    pub fn new(path: &str) -> V3 {
+    pub fn new(path: &str, password: &str) -> Option<V3> {
         crypto::init();
 
-        return V3 {
+        let mut kc = V3 {
             path: path.to_string(),
             salt: [0; 32],
             iter: 0,
             header: None,
             items: Vec::new(),
         };
+
+        match kc.unlock(password) {
+            true => return Some(kc),
+            false => return None,
+        };
     }
 
-    fn check_tag(&self, f: &mut File) -> Result<(), Error> {
+    fn has_tag(&self, f: &mut File) -> bool {
         let mut tag: [u8; 4] = [0; 4];
-        f.read_exact(&mut tag)?;
-        let tag = str::from_utf8(&tag).unwrap();
-        if tag != "PWS3" {
-            panic!("Wrong file format!");
+
+        match f.read_exact(&mut tag) {
+            Err(e) => {
+                warn!("Can't read tag: {}", e.description());
+                return false;
+            }
+            _ => (),
+        };
+
+        match str::from_utf8(&tag) {
+            Err(e) => {
+                warn!("Can't convert tag to UTF8: {}", e.description());
+                return false;
+            }
+            Ok(tag) => {
+                if tag != "PWS3" {
+                    warn!("Got invalid tag: {}", tag);
+                    return false;
+                }
+                return true;
+            }
         }
-        return Ok(());
     }
 
-    fn check_password(&self, f: &mut File, password: &str) -> Option<[u8; 32]> {
+    fn stretch_password(&self, f: &mut File, password: &str) -> Option<[u8; 32]> {
         let mut expected: [u8; 32] = [0; 32];
         match f.read_exact(&mut expected) {
             Ok(_) => {
-
                 let got = crypto::stretch(password, &self.salt, self.iter);
                 if crypto::sha256(&got) != expected {
                     return None;
                 }
-
-                //assert_eq!(crypto::sha256(&got), expected);
                 return Some(got);
-
             }
-            Err(_) => return None,
+            _ => return None,
         }
     }
 
-    pub fn unlock(&mut self, _password: &str) -> Result<(), Error> {
-        let mut f = File::open(&self.path)?;
-
-        self.check_tag(&mut f)?;
-        f.read_exact(&mut self.salt)?;
-        self.iter = f.read_u32::<LittleEndian>().unwrap();
-
-        let stretched = match self.check_password(&mut f, _password) {
-            Some(p) => p,
-            None => return Err(Error::new(ErrorKind::Other, "oh no!")),
+    fn unlock(&mut self, password: &str) -> bool {
+        let mut f = match File::open(&self.path) {
+            Ok(f) => f,
+            Err(e) => {
+                warn!("Can't open database: {}", e.description());
+                return false;
+            }
         };
 
+        // make sure we are reading expected file format
+        if !self.has_tag(&mut f) {
+            return false;
+        }
+
+        // read salt and iv
+        match f.read_exact(&mut self.salt) {
+            Err(e) => {
+                warn!("Can't open database: {}", e.description());
+                return false;
+            },
+            _ => (),
+        }
+
+        self.iter = match f.read_u32::<LittleEndian>() {
+            Err(e) => {
+                warn!("Can't read number of password iterations: {}", e.description());
+                return false;
+            },
+            Ok(i) => i,
+        };
+
+        // stretch password
+        let stretched = match self.stretch_password(&mut f, password) {
+            Some(p) => p,
+            None => return false,
+        };
+
+        // read and decrypt all initial settings
         let mut b12: [u8; 32] = [0; 32];
-        f.read_exact(&mut b12).unwrap();
+        match f.read_exact(&mut b12) {
+            Err(e) => {
+                warn!("Can't read B12: {}", e.description());
+                return false;
+            },
+            _ => (),
+        }
 
         let mut b34: [u8; 32] = [0; 32];
-        f.read_exact(&mut b34).unwrap();
+        match f.read_exact(&mut b34) {
+            Err(e) => {
+                warn!("Can't read B34: {}", e.description());
+                return false;
+            },
+            _ => (),
+        }
 
         let mut iv: [u8; 16] = [0; 16];
-        f.read_exact(&mut iv).unwrap();
+        match f.read_exact(&mut iv) {
+            Err(e) => {
+                warn!("Can't read IV: {}", e.description());
+                return false;
+            },
+            _ => (),
+        }
 
-        let k = crypto::decrypt_block_ecb(&b12, &stretched);
-        let l = crypto::decrypt_block_ecb(&b34, &stretched);
+        let k = match crypto::decrypt_block_ecb(&b12, &stretched) {
+            Ok(k) => k,
+            Err(e) => {
+                warn!("Can't decrypt K, probably invalid password: {}", e.description());
+                return false;
+            },
+        };
+        let l = match crypto::decrypt_block_ecb(&b34, &stretched) {
+            Ok(l) => l,
+            Err(e) => {
+                warn!("Can't decrypt L, probably invalid password: {}", e.description());
+                return false;
+            },
+        };
 
+        // read the remainder into vector and find the EOF marker
         let mut d: Vec<u8> = Vec::new();
 
-        f.read_to_end(&mut d).unwrap();
+        f.read_to_end(&mut d).expect("Can't read whole database file");
 
-        let eof = d.windows(16).position(|w| w == "PWS3-EOFPWS3-EOF".as_bytes()).unwrap();
+        let eof_pos = match d.windows(16).position(|w| w == "PWS3-EOFPWS3-EOF".as_bytes()) {
+            Some(pos) => pos,
+            None => {
+                warn!("Can't find EOF marker");
+                return false;
+            },
+        };
 
-        crypto::decrypt_inplace(&mut d[0..eof], &k, &iv);
+        match crypto::decrypt_inplace(&mut d[0..eof_pos], &k, &iv) {
+            Err(e) => {
+                warn!("Can't decrypt data: {}", e.description());
+                return false;
+            }
+            _ => (),
+        }
 
         let mut mac = crypto::HMAC::new(&l);
-        let mut c = Cursor::new(&d[0 .. eof]);
+        let mut c = Cursor::new(&d[0 .. eof_pos]);
 
         // header
         match item::parse(&mut mac, &item::HEADER, &mut c) {
             Some(hdr) => self.header = Some(hdr),
-            None => println!("GOT NOTHING!"), // TODO: fixme
+            None => {
+                warn!("Can't read header item");
+                return false;
+            },
         }
 
         // entries
@@ -108,13 +197,17 @@ impl V3 {
             }
         }
 
-        let expected_hmac = &d[eof+16 .. eof+16+32];
+        // verify mac
+        let expected_hmac = &d[eof_pos+16 .. eof_pos+16+32];
         match mac.verify(expected_hmac) {
-            Ok(_) => println!("MAC matches!!!"),
-            Err(_) => println!("doesn't match"),
+            Err(e) => {
+                warn!("Can't verify HMAC: {}", e.description());
+                return false;
+            },
+            _ => (),
         }
 
-        return Ok(());
+        return true;
     }
 
     #[cfg(test)]

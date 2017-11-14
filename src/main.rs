@@ -8,6 +8,8 @@ extern crate byteorder;
 extern crate getopts;
 extern crate rpassword;
 extern crate regex;
+#[macro_use]
+extern crate log;
 
 #[cfg(test)]
 mod tests;
@@ -68,9 +70,9 @@ fn print_usage(exe: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-fn op_list(kc: &mut keychain::V3, args: &[String]) {
+fn op_list(kc: &keychain::V3, args: &[String]) {
     let re = args.join("");
-    let re = Regex::new(&re).expect("Couldn't parse regular expression");
+    let re = Regex::new(&re).expect("Can't parse regular expression");
 
     println!("TODO {}", re);
 
@@ -106,7 +108,7 @@ fn op_list(kc: &mut keychain::V3, args: &[String]) {
     }
 }
 
-fn run_op(kc: &mut keychain::V3, op: &Vec<String>) -> bool {
+fn run_op(kc: &keychain::V3, op: &Vec<String>) -> bool {
     match op[0].as_ref() {
         "list" => op_list(kc, &op[1..]),
         "copy" => println!("TODO"),
@@ -151,13 +153,15 @@ fn main() {
     if matches.opt_present("S") {
         io::stdin().read_line(&mut password).expect("Can't read password from stdin!");
     } else {
-        password = rpassword::prompt_password_stdout("Password: ").expect("Couldn't query password");
+        password = rpassword::prompt_password_stdout("Password: ").expect("Can't query password");
     }
 
-    let mut kc = keychain::V3::new(&db_path);
-    // TODO: handle the error
-    kc.unlock(&password).unwrap();
-    if !run_op(&mut kc, &matches.free) {
-        print_usage(&exe, opts);
+    match keychain::V3::new(&db_path, &password) {
+        Some(kc) => {
+            if !run_op(&kc, &matches.free) {
+                print_usage(&exe, opts);
+            }
+        },
+        None => {},
     }
 }

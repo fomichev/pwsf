@@ -5,29 +5,25 @@ mod tests {
 
     #[test]
     fn invalid_db_path() {
-        let mut kc = ::keychain::V3::new("invalid_db_path");
-        let err = kc.unlock("invalid_password");
-        assert_eq!(err.is_ok(), false);
+        let kc = ::keychain::V3::new("invalid_db_path", "invalid_password");
+        assert_eq!(kc.is_some(), false);
     }
 
     #[test]
     fn invalid_db_password() {
-        let mut kc = ::keychain::V3::new("simple.psafe3");
-        let err = kc.unlock("invalid_password");
-        assert_eq!(err.is_ok(), false);
+        let kc = ::keychain::V3::new("simple.psafe3", "invalid_password");
+        assert_eq!(kc.is_some(), false);
     }
 
     #[test]
     fn valid_db_password() {
-        let mut kc = ::keychain::V3::new("simple.psafe3");
-        let err = kc.unlock("bogus12345");
-        assert_eq!(err.is_ok(), true);
+        let kc = ::keychain::V3::new("simple.psafe3", "bogus12345");
+        assert_eq!(kc.is_some(), true);
     }
 
     #[test]
     fn valid_db_size() {
-        let mut kc = ::keychain::V3::new("simple.psafe3");
-        kc.unlock("bogus12345").expect("Invalid passord");
+        let kc = ::keychain::V3::new("simple.psafe3", "bogus12345").expect("Invalid password");
         assert_eq!(kc.len(), 9);
     }
 
@@ -156,8 +152,7 @@ mod tests {
 
     #[test]
     fn valid_db_contents() {
-        let mut kc = ::keychain::V3::new("simple.psafe3");
-        kc.unlock("bogus12345").expect("Invalid passord");
+        let kc = ::keychain::V3::new("simple.psafe3", "bogus12345").expect("Invalid password");
 
         let mut z = 0;
         for i in kc.iter() {
@@ -165,7 +160,7 @@ mod tests {
 
             for (k, ref v) in ITEMS[z].iter() {
                 println!("? {:?}", k);
-                assert_eq!(i.get(*k).expect("Couldn't get the item while iterating"), *v);
+                assert_eq!(i.get(*k).expect("Can't get the item while iterating"), *v);
             }
 
             z = z + 1
