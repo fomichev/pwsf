@@ -35,17 +35,17 @@ pub enum Kind {
 
 #[derive(PartialEq,Eq,Hash,Debug,Clone,Copy)]
 pub enum Type {
-	Raw,
-	Byte,
-	Short,
+    Raw,
+    Byte,
+    Short,
     Int,
-	Text,
+    Text,
 }
 
 #[derive(Debug,Clone)]
 pub struct Def {
     pub kind: Kind,
-	pub tp: Type,
+    pub tp: Type,
 }
 
 lazy_static! {
@@ -85,11 +85,11 @@ lazy_static! {
 
 #[derive(PartialEq,Eq,Hash,Debug,Clone)]
 pub enum Data {
-	Raw(Vec<u8>),
-	Byte(u8),
-	Short(u16),
+    Raw(Vec<u8>),
+    Byte(u8),
+    Short(u16),
     Int(u32),
-	Text(String),
+    Text(String),
 }
 
 #[derive(Debug)]
@@ -160,7 +160,7 @@ fn new_field(map: &HashMap<u8,Def>, val: u8, data: &[u8]) -> Field {
 fn skip_padding(c: &mut Cursor<&[u8]>, len: u32) {
     let rem = (5 + len) % 16;
     if rem != 0 {
-        c.seek(SeekFrom::Current(16 - rem as i64)).unwrap();
+        c.seek(SeekFrom::Current(16 - rem as i64)).expect("Corrupted field, can't skip padding");
     }
 }
 
@@ -170,11 +170,11 @@ pub fn parse_field(mac: &mut crypto::HMAC, map: &HashMap<u8,Def>, c: &mut Cursor
         Err(_) => return None,
     };
 
-    let tp = c.read_u8().unwrap();
+    let tp = c.read_u8().expect("Corrupted field, can't read type");
 
     let mut v = Vec::new();
     v.resize(len as usize, 0);
-    c.read_exact(&mut v).unwrap();
+    c.read_exact(&mut v).expect("Corrupted field, can't read contents");
 
     mac.update(&v[..]);
 

@@ -70,7 +70,7 @@ fn print_usage(exe: &str, opts: Options) {
 
 fn op_list(kc: &mut keychain::V3, args: &[String]) {
     let re = args.join("");
-    let re = Regex::new(&re).unwrap();
+    let re = Regex::new(&re).expect("Couldn't parse regular expression");
 
     println!("TODO {}", re);
 
@@ -151,11 +151,12 @@ fn main() {
     if matches.opt_present("S") {
         io::stdin().read_line(&mut password).expect("Can't read password from stdin!");
     } else {
-        password = rpassword::prompt_password_stdout("Password: ").unwrap();
+        password = rpassword::prompt_password_stdout("Password: ").expect("Couldn't query password");
     }
 
-	let mut kc = keychain::V3::new(&db_path);
-	kc.unlock(&password).unwrap();
+    let mut kc = keychain::V3::new(&db_path);
+    // TODO: handle the error
+    kc.unlock(&password).unwrap();
     if !run_op(&mut kc, &matches.free) {
         print_usage(&exe, opts);
     }

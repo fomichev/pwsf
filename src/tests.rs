@@ -27,7 +27,7 @@ mod tests {
     #[test]
     fn valid_db_size() {
         let mut kc = ::keychain::V3::new("simple.psafe3");
-        kc.unlock("bogus12345").unwrap();
+        kc.unlock("bogus12345").expect("Invalid passord");
         assert_eq!(kc.len(), 9);
     }
 
@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn valid_db_contents() {
         let mut kc = ::keychain::V3::new("simple.psafe3");
-        kc.unlock("bogus12345").unwrap();
+        kc.unlock("bogus12345").expect("Invalid passord");
 
         let mut z = 0;
         for i in kc.iter() {
@@ -165,7 +165,7 @@ mod tests {
 
             for (k, ref v) in ITEMS[z].iter() {
                 println!("? {:?}", k);
-                assert_eq!(&i.get(k).unwrap(), v);
+                assert_eq!(i.get(*k).expect("Couldn't get the item while iterating"), *v);
             }
 
             z = z + 1
