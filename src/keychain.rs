@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::Cursor;
 use std::io::Read;
 use byteorder::{ReadBytesExt, LittleEndian};
+use regex::Regex;
 
 use crypto;
 use item;
@@ -214,4 +215,43 @@ impl V3 {
     pub fn len(&self) -> usize { self.items.len() }
 
     pub fn iter(&self) -> std::slice::Iter<item::Item> { self.items.iter() }
+
+    pub fn each(&self, f: &Fn(&str, &item::Item)) {
+        for i in self.iter() {
+            let mut name = String::new();
+
+            match i.get(item::Kind::Group) {
+                Some(g) => {
+                    match g {
+                        &item::Data::Text(ref v) => {
+                            name.push_str(v);
+                            name.push('.');
+                        },
+                        _ => panic!("Unexpected group type"),
+                    }
+                },
+                _ => (),
+            }
+
+            match i.get(item::Kind::Title) {
+                Some(t) => {
+                    match t {
+                        &item::Data::Text(ref v) => name.push_str(v),
+                        _ => panic!("Unexpected title type"),
+                    }
+                },
+                _ => (),
+            }
+
+            f(&name, &i);
+        }
+    }
+
+    pub fn each_re(&self, re: &Regex, f: &Fn(&str, &item::Item)) {
+        self.each(&|name: &str, i: &item::Item| {
+            if re.is_match(&name) {
+                f(name, i);
+            }
+        });
+    }
 }

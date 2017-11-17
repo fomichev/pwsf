@@ -1,3 +1,4 @@
+use std;
 use std::io::Cursor;
 use std::io::SeekFrom;
 use std::io::Read;
@@ -98,12 +99,26 @@ pub struct Field {
     pub data: Data,
 }
 
+impl ToString for Field {
+    fn to_string(&self) -> String {
+        return match self.data {
+            Data::Raw(_) => "<raw bytes>".to_string(),
+            Data::Byte(v) => v.to_string(),
+            Data::Short(v) => v.to_string(),
+            Data::Int(v) => v.to_string(),
+            Data::Text(ref v) => v.clone(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Item {
     pub field: HashMap<Kind, Field>,
 }
 
 impl Item {
+    pub fn iter(&self) -> std::collections::hash_map::Iter<Kind, Field> { self.field.iter() }
+
     pub fn get(&self, k: Kind) -> Option<&Data> {
         match self.field.get(&k) {
             None => return None,

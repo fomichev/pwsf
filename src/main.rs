@@ -20,16 +20,13 @@ use std::io;
 use regex::Regex;
 
 fn print_usage(exe: &str, opts: Options) {
-    let brief = format!("Usage: {0} [options] <list|copy|query>
+    let brief = format!("Usage: {0} [options] <list|copy|show>
 
   {0} list [<name regexp>]
     list all entries or entries matching given regexp
 
   {0} copy <name regexp>
     copy password to clipboard, after user presses any key, copy username and exit
-
-  {0} query <field> [<field>~<regexp>]
-    print given field for each entry where field matches given regexp
 
   {0} show <name regexp>
     print all fields for matching entries
@@ -51,19 +48,6 @@ fn print_usage(exe: &str, opts: Options) {
     Test.Test Nine
     Test.Test One
 
-    $ echo -n bogus12345 | {0} -p ./simple.psafe3 -S query username
-    user8
-    user4
-    user2
-    user7
-    user3
-    user9
-    user6
-    user1
-    user5
-
-    $ echo -n bogus12345 | {0} -p ./simple.psafe3 -S query username name~six
-
     $ echo -n bogus12345 | {0} -p ./simple.psafe3 -S copy 'Test six'
     Password is now in your clipboard, press ENTER to copy username", exe);
 
@@ -71,58 +55,42 @@ fn print_usage(exe: &str, opts: Options) {
 }
 
 fn op_list(kc: &keychain::V3, args: &[String]) {
-    let re = args.join("");
-    let re = Regex::new(&re).expect("Can't parse regular expression");
+    let re = Regex::new(&args.join("")).expect("Can't parse regular expression");
 
-    println!("TODO {}", re);
+    kc.each_re(&re, &|name: &str, _: &item::Item| {
+        println!("{}", name);
+    });
+}
 
-    for i in kc.iter() {
-        let mut title: String = String::new();
+fn op_copy(kc: &keychain::V3, args: &[String]) {
+    let re = Regex::new(&args.join("")).expect("Can't parse regular expression");
 
-        match i.get(item::Kind::Group) {
-            Some(g) => {
-                match g {
-                    &item::Data::Text(ref v) => {
-                        title.push_str(v);
-                        title.push('.');
-                    },
-                    _ => panic!("WTF TODO"),
-                }
-            },
-            None => (),
+    kc.each_re(&re, &|name: &str, _: &item::Item| {
+        println!("{}", name);
+    });
+}
+
+fn op_show(kc: &keychain::V3, args: &[String]) {
+    let re = Regex::new(&args.join("")).expect("Can't parse regular expression");
+
+    kc.each_re(&re, &|name: &str, i: &item::Item| {
+        println!("{}:", name);
+        for (k, v) in i.iter() {
+            if *k != item::Kind::UUID {
+                println!("\t{:?}: {}", k, v.to_string());
+            }
         }
-
-        match i.get(item::Kind::Title) {
-            Some(t) => {
-                match t {
-                    &item::Data::Text(ref v) => title.push_str(v),
-                    _ => panic!("WTF TODO"),
-                }
-            },
-            None => (),
-        }
-
-        if re.is_match(&title) {
-            println!("{}", title);
-        }
-    }
+        println!("");
+    });
 }
 
 fn run_op(kc: &keychain::V3, op: &Vec<String>) -> bool {
     match op[0].as_ref() {
         "list" => op_list(kc, &op[1..]),
-        "copy" => println!("TODO"),
-        "query" => println!("TODO"),
-        "show" => println!("TODO"),
+        "copy" => op_copy(kc, &op[1..]),
+        "show" => op_show(kc, &op[1..]),
         _ => return false,
     }
-
-    // TODO: switch on op[0]
-    /*
-    for i in kc.iter() {
-        println!("{:?}", i);
-    }
-    */
 
     return true;
 }
