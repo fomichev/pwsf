@@ -8,8 +8,7 @@ extern crate byteorder;
 extern crate getopts;
 extern crate rpassword;
 extern crate regex;
-#[macro_use]
-extern crate log;
+extern crate clipboard;
 
 #[cfg(test)]
 mod tests;
@@ -18,6 +17,7 @@ use getopts::Options;
 use std::env;
 use std::io;
 use regex::Regex;
+use clipboard::{ClipboardProvider,ClipboardContext};
 
 fn print_usage(exe: &str, opts: Options) {
     let brief = format!("Usage: {0} [options] <list|copy|show>
@@ -57,7 +57,7 @@ fn print_usage(exe: &str, opts: Options) {
 fn op_list(kc: &keychain::V3, args: &[String]) {
     let re = Regex::new(&args.join("")).expect("Can't parse regular expression");
 
-    kc.each_re(&re, &|name: &str, _: &item::Item| {
+    kc.each_re(&re, &mut |name: &str, _: &item::Item| {
         println!("{}", name);
     });
 }
@@ -65,15 +65,63 @@ fn op_list(kc: &keychain::V3, args: &[String]) {
 fn op_copy(kc: &keychain::V3, args: &[String]) {
     let re = Regex::new(&args.join("")).expect("Can't parse regular expression");
 
-    kc.each_re(&re, &|name: &str, _: &item::Item| {
-        println!("{}", name);
+    let mut v = Vec::new();
+    kc.each_re(&re, &mut |name: &str, i: &item::Item| {
+        let mut user = String::new();
+        let mut pass = String::new();
+
+        match i.get(item::Kind::Username) {
+            Some(u) => {
+                match u {
+                    &item::Data::Text(ref v) => user.push_str(v),
+                    _ => panic!("Username has wrong type"),
+                }
+            },
+            _ => eprintln!("Username missing, assuming empty string"),
+        }
+
+        match i.get(item::Kind::Password) {
+            Some(p) => {
+                match p {
+                    &item::Data::Text(ref v) => pass.push_str(v),
+                    _ => panic!("Password has wrong type"),
+                }
+            },
+            _ => eprintln!("Password missing, assuming empty string"),
+        }
+
+        v.push((name.to_string(), user, pass));
     });
+
+    let mut selected = 0;
+    if v.len() > 1 {
+        println!("Select item to copy:");
+        for i in 0..v.len() {
+            println!("{}) {}", i, v[i].0);
+        }
+
+        selected = match read_stdin_number() {
+            Some(n) => n,
+            None => {
+                eprintln!("Can't read selection from stdin");
+                return;
+            },
+        }
+    }
+
+    match v.get(selected) {
+        Some(s) => clipboard_copy(&s.1, &s.2),
+        None => {
+            eprintln!("Invalid selection");
+            return;
+        },
+    }
 }
 
 fn op_show(kc: &keychain::V3, args: &[String]) {
     let re = Regex::new(&args.join("")).expect("Can't parse regular expression");
 
-    kc.each_re(&re, &|name: &str, i: &item::Item| {
+    kc.each_re(&re, &mut |name: &str, i: &item::Item| {
         println!("{}:", name);
         for (k, v) in i.iter() {
             if *k != item::Kind::UUID {
@@ -82,6 +130,36 @@ fn op_show(kc: &keychain::V3, args: &[String]) {
         }
         println!("");
     });
+}
+
+fn read_stdin_number() -> Option<usize> {
+    let mut t = String::new();
+    io::stdin().read_line(&mut t).expect("Can't read line from stdin");
+
+    match t.trim().parse::<usize>() {
+        Ok(i) => return Some(i),
+        _ => return None,
+    };
+}
+
+fn wait_for_enter() {
+    let mut junk = String::new();
+    io::stdin().read_line(&mut junk).expect("Can't wait for newline from stdin");
+}
+
+fn clipboard_copy(user: &str, pass: &str) {
+    let mut ctx: ClipboardContext = ClipboardProvider::new().expect("Can't obtain clipboard context");
+
+    ctx.set_contents(user.to_owned()).expect("Can't paste username into clipboard");
+    println!("Username is now in your clipboard, press ENTER to copy password");
+    wait_for_enter();
+
+    ctx.set_contents(pass.to_owned()).expect("Can't paste password into clipboard");
+    println!("Password is now in your clipboard, press ENTER to clear clipboard");
+    wait_for_enter();
+
+    // should be cleared automatically, but try to overwrite anyway
+    ctx.set_contents("".to_owned()).expect("Can't clear clipboard");
 }
 
 fn run_op(kc: &keychain::V3, op: &Vec<String>) -> bool {
@@ -119,7 +197,8 @@ fn main() {
 
     let mut password = String::new();
     if matches.opt_present("S") {
-        io::stdin().read_line(&mut password).expect("Can't read password from stdin!");
+        io::stdin().read_line(&mut password).expect("Can't read password from stdin");
+        password = password.trim_right().to_string();
     } else {
         password = rpassword::prompt_password_stdout("Password: ").expect("Can't query password");
     }

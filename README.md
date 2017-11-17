@@ -1,17 +1,18 @@
 # Installation
 
-git clone ... rustup install nightly rustup default nightly cargo build
+```
+git clone ...
+rustup install nightly
+rustup default nightly
+cargo build
+```
 
 # Usage example
 
 ```
-$ echo -n bogus12345 | cargo run -- -S -p ./simple.psafe3 list
+$ echo bogus12345 | cargo run -- -S -p ./simple.psafe3 list
 
-$ echo -n bogus12345 | cargo run -- -S -p ./simple.psafe3 show "(Four|Five)"
+$ echo bogus12345 | cargo run -- -S -p ./simple.psafe3 show "(Four|Five)"
+
+echo -e "bogus12345\n1" | cargo run -- -S -p ./simple.psafe3 copy "(Four|Five)"
 ```
-
-# TODO
-
-*   cli wrapper (https://github.com/aweinstock314/rust-clipboard)
-*   remove all debug prints
-*   remove #[derive(Debug)]

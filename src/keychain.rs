@@ -42,7 +42,7 @@ impl V3 {
 
         match f.read_exact(&mut tag) {
             Err(e) => {
-                warn!("Can't read tag: {}", e.description());
+                eprintln!("Can't read tag: {}", e.description());
                 return false;
             }
             _ => (),
@@ -50,12 +50,12 @@ impl V3 {
 
         match str::from_utf8(&tag) {
             Err(e) => {
-                warn!("Can't convert tag to UTF8: {}", e.description());
+                eprintln!("Can't convert tag to UTF8: {}", e.description());
                 return false;
             }
             Ok(tag) => {
                 if tag != "PWS3" {
-                    warn!("Got invalid tag: {}", tag);
+                    eprintln!("Got invalid tag: {}", tag);
                     return false;
                 }
                 return true;
@@ -81,7 +81,7 @@ impl V3 {
         let mut f = match File::open(&self.path) {
             Ok(f) => f,
             Err(e) => {
-                warn!("Can't open database: {}", e.description());
+                eprintln!("Can't open database: {}", e.description());
                 return false;
             }
         };
@@ -94,7 +94,7 @@ impl V3 {
         // read salt and iv
         match f.read_exact(&mut self.salt) {
             Err(e) => {
-                warn!("Can't open database: {}", e.description());
+                eprintln!("Can't open database: {}", e.description());
                 return false;
             },
             _ => (),
@@ -102,7 +102,7 @@ impl V3 {
 
         self.iter = match f.read_u32::<LittleEndian>() {
             Err(e) => {
-                warn!("Can't read number of password iterations: {}", e.description());
+                eprintln!("Can't read number of password iterations: {}", e.description());
                 return false;
             },
             Ok(i) => i,
@@ -111,14 +111,17 @@ impl V3 {
         // stretch password
         let stretched = match self.stretch_password(&mut f, password) {
             Some(p) => p,
-            None => return false,
+            None => {
+                eprintln!("Invalid password");
+                return false;
+            },
         };
 
         // read and decrypt all initial settings
         let mut b12: [u8; 32] = [0; 32];
         match f.read_exact(&mut b12) {
             Err(e) => {
-                warn!("Can't read B12: {}", e.description());
+                eprintln!("Can't read B12: {}", e.description());
                 return false;
             },
             _ => (),
@@ -127,7 +130,7 @@ impl V3 {
         let mut b34: [u8; 32] = [0; 32];
         match f.read_exact(&mut b34) {
             Err(e) => {
-                warn!("Can't read B34: {}", e.description());
+                eprintln!("Can't read B34: {}", e.description());
                 return false;
             },
             _ => (),
@@ -136,7 +139,7 @@ impl V3 {
         let mut iv: [u8; 16] = [0; 16];
         match f.read_exact(&mut iv) {
             Err(e) => {
-                warn!("Can't read IV: {}", e.description());
+                eprintln!("Can't read IV: {}", e.description());
                 return false;
             },
             _ => (),
@@ -145,14 +148,14 @@ impl V3 {
         let k = match crypto::decrypt_block_ecb(&b12, &stretched) {
             Ok(k) => k,
             Err(e) => {
-                warn!("Can't decrypt K, probably invalid password: {}", e.description());
+                eprintln!("Can't decrypt K, probably invalid password: {}", e.description());
                 return false;
             },
         };
         let l = match crypto::decrypt_block_ecb(&b34, &stretched) {
             Ok(l) => l,
             Err(e) => {
-                warn!("Can't decrypt L, probably invalid password: {}", e.description());
+                eprintln!("Can't decrypt L, probably invalid password: {}", e.description());
                 return false;
             },
         };
@@ -165,14 +168,14 @@ impl V3 {
         let eof_pos = match d.windows(16).position(|w| w == "PWS3-EOFPWS3-EOF".as_bytes()) {
             Some(pos) => pos,
             None => {
-                warn!("Can't find EOF marker");
+                eprintln!("Can't find EOF marker");
                 return false;
             },
         };
 
         match crypto::decrypt_inplace(&mut d[0..eof_pos], &k, &iv) {
             Err(e) => {
-                warn!("Can't decrypt data: {}", e.description());
+                eprintln!("Can't decrypt data: {}", e.description());
                 return false;
             }
             _ => (),
@@ -185,7 +188,7 @@ impl V3 {
         match item::parse(&mut mac, &item::HEADER, &mut c) {
             Some(hdr) => self.header = Some(hdr),
             None => {
-                warn!("Can't read header item");
+                eprintln!("Can't read header item");
                 return false;
             },
         }
@@ -202,7 +205,7 @@ impl V3 {
         let expected_hmac = &d[eof_pos+16 .. eof_pos+16+32];
         match mac.verify(expected_hmac) {
             Err(e) => {
-                warn!("Can't verify HMAC: {}", e.description());
+                eprintln!("Can't verify HMAC: {}", e.description());
                 return false;
             },
             _ => (),
@@ -216,7 +219,7 @@ impl V3 {
 
     pub fn iter(&self) -> std::slice::Iter<item::Item> { self.items.iter() }
 
-    pub fn each(&self, f: &Fn(&str, &item::Item)) {
+    pub fn each(&self, f: &mut FnMut(&str, &item::Item)) {
         for i in self.iter() {
             let mut name = String::new();
 
@@ -247,8 +250,8 @@ impl V3 {
         }
     }
 
-    pub fn each_re(&self, re: &Regex, f: &Fn(&str, &item::Item)) {
-        self.each(&|name: &str, i: &item::Item| {
+    pub fn each_re(&self, re: &Regex, f: &mut FnMut(&str, &item::Item)) {
+        self.each(&mut|name: &str, i: &item::Item| {
             if re.is_match(&name) {
                 f(name, i);
             }

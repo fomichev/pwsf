@@ -9,7 +9,7 @@ lazy_static = "0.2"
 getopts = "0.2"
 rpassword = "1.0.0"
 regex = "0.2"
-log = "0.3"
+clipboard = "0.4.2"
 
 [dependencies.gcrypt]
 version = "0.5"
