@@ -18,6 +18,7 @@ use std::env;
 use std::io;
 use regex::Regex;
 use clipboard::{ClipboardProvider,ClipboardContext};
+use std::{thread, time};
 
 fn print_usage(exe: &str, opts: Options) {
     let brief = format!("Usage: {0} [options] <list|copy|show>
@@ -54,19 +55,20 @@ fn print_usage(exe: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-fn op_list(kc: &keychain::V3, args: &[String]) {
-    let re = Regex::new(&args.join("")).expect("Can't parse regular expression");
+fn case_insensitive_re(args: &[String]) -> Regex {
+    let re = format!("(?i){}", &args.join(""));
+    return Regex::new(&re).expect("Can't parse regular expression");
+}
 
-    kc.each_re(&re, &mut |name: &str, _: &item::Item| {
+fn op_list(kc: &keychain::V3, args: &[String]) {
+    kc.each_re(&case_insensitive_re(args), &mut |name: &str, _: &item::Item| {
         println!("{}", name);
     });
 }
 
 fn op_copy(kc: &keychain::V3, args: &[String]) {
-    let re = Regex::new(&args.join("")).expect("Can't parse regular expression");
-
     let mut v = Vec::new();
-    kc.each_re(&re, &mut |name: &str, i: &item::Item| {
+    kc.each_re(&case_insensitive_re(args), &mut |name: &str, i: &item::Item| {
         let mut user = String::new();
         let mut pass = String::new();
 
@@ -94,6 +96,12 @@ fn op_copy(kc: &keychain::V3, args: &[String]) {
     });
 
     let mut selected = 0;
+
+    if v.len() == 0 {
+            eprintln!("No entries matching '{}' found", &args.join(""));
+            return;
+    }
+
     if v.len() > 1 {
         println!("Select item to copy:");
         for i in 0..v.len() {
@@ -119,9 +127,7 @@ fn op_copy(kc: &keychain::V3, args: &[String]) {
 }
 
 fn op_show(kc: &keychain::V3, args: &[String]) {
-    let re = Regex::new(&args.join("")).expect("Can't parse regular expression");
-
-    kc.each_re(&re, &mut |name: &str, i: &item::Item| {
+    kc.each_re(&case_insensitive_re(args), &mut |name: &str, i: &item::Item| {
         println!("{}:", name);
         for (k, v) in i.iter() {
             if *k != item::Kind::UUID {
@@ -150,13 +156,14 @@ fn wait_for_enter() {
 fn clipboard_copy(user: &str, pass: &str) {
     let mut ctx: ClipboardContext = ClipboardProvider::new().expect("Can't obtain clipboard context");
 
-    ctx.set_contents(user.to_owned()).expect("Can't paste username into clipboard");
-    println!("Username is now in your clipboard, press ENTER to copy password");
+    ctx.set_contents(pass.to_owned()).expect("Can't paste password into clipboard");
+    println!("Password is now in your clipboard, press ENTER to copy username");
     wait_for_enter();
 
-    ctx.set_contents(pass.to_owned()).expect("Can't paste password into clipboard");
-    println!("Password is now in your clipboard, press ENTER to clear clipboard");
-    wait_for_enter();
+    ctx.set_contents(user.to_owned()).expect("Can't paste username into clipboard");
+    println!("Username is now in your clipboard, you have 15 seconds before the clipboard is flushed");
+
+    thread::sleep(time::Duration::from_secs(15));
 
     // should be cleared automatically, but try to overwrite anyway
     ctx.set_contents("".to_owned()).expect("Can't clear clipboard");
@@ -192,7 +199,12 @@ fn main() {
 
     let db_path = match matches.opt_str("p") {
         Some(p) => p,
-        None => "~/.pwsafe/default.psafe3".to_string(),
+        None => {
+            match env::home_dir() {
+                Some(path) => format!("{}/.pwsafe/default.psafe3", path.display()).to_string(),
+                None => panic!("Can't get home directory"),
+            }
+        },
     };
 
     let mut password = String::new();

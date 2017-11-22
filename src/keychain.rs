@@ -81,7 +81,7 @@ impl V3 {
         let mut f = match File::open(&self.path) {
             Ok(f) => f,
             Err(e) => {
-                eprintln!("Can't open database: {}", e.description());
+                eprintln!("Can't open database at '{}': {}", self.path, e.description());
                 return false;
             }
         };
