@@ -9,6 +9,7 @@ extern crate getopts;
 extern crate rpassword;
 extern crate regex;
 extern crate clipboard;
+extern crate rand;
 
 #[cfg(test)]
 mod tests;
@@ -16,12 +17,25 @@ mod tests;
 use getopts::Options;
 use std::env;
 use std::io;
+use std::io::Write;
 use regex::Regex;
 use clipboard::{ClipboardProvider,ClipboardContext};
 use std::{thread, time};
+use std::path::Path;
+
+static mut STDIN_PASSWORD: bool = false;
 
 fn print_usage(exe: &str, opts: Options) {
-    let brief = format!("Usage: {0} [options] <list|copy|show>
+    let brief = format!("Usage: {0} [options] <operation>
+
+  {0} new
+    create new empty database
+
+  {0} passwd
+    change password of existing database
+
+  {0} add
+    add new entry
 
   {0} list [<name regexp>]
     list all entries or entries matching given regexp
@@ -58,6 +72,69 @@ fn print_usage(exe: &str, opts: Options) {
 fn case_insensitive_re(args: &[String]) -> Regex {
     let re = format!("(?i){}", &args.join(""));
     return Regex::new(&re).expect("Can't parse regular expression");
+}
+
+fn op_new(db_path: &str) {
+    if Path::new(&db_path).exists() {
+        println!("Database '{}' already exists!", &db_path);
+        return;
+    }
+
+    let password = ask_password("Password: ");
+    let password2 = ask_password("Retype password: ");
+
+    if password != password2 {
+        println!("Passwords don't match!");
+        return;
+    }
+
+    let mut kc = keychain::V3::new(&db_path);
+    kc.save(&password);
+}
+
+fn op_passwd(db_path: &str) {
+    let password = ask_password("Current password: ");
+
+    let newpassword = ask_password("New Password: ");
+    let newpassword2 = ask_password("Retype new password: ");
+
+    if newpassword != newpassword2 {
+        println!("New passwords don't match!");
+        return;
+    }
+
+    match keychain::V3::open(&db_path, &password) {
+        Some(mut kc) => kc.save(&newpassword),
+        None => false,
+    };
+}
+
+fn op_add(db_path: &str) {
+    let password = ask_password("Password: ");
+
+    match keychain::V3::open(&db_path, &password) {
+        Some(mut kc) => {
+            let mut item = item::new();
+
+            let g = ask("Group");
+            let t = ask("Title");
+            let u = ask("Username");
+            let p = ask("Password");
+            let n = ask("Notes");
+
+            if g != "" {
+                item.insert(item::Kind::Group, &item::Data::Text(g));
+            }
+            item.insert(item::Kind::Title, &item::Data::Text(t));
+            item.insert(item::Kind::Username, &item::Data::Text(u));
+            item.insert(item::Kind::Password, &item::Data::Text(p));
+            item.insert(item::Kind::Notes, &item::Data::Text(n));
+            kc.insert(item);
+
+            kc.save(&password);
+        },
+        None => (),
+    };
 }
 
 fn op_list(kc: &keychain::V3, args: &[String]) {
@@ -153,6 +230,14 @@ fn wait_for_enter() {
     io::stdin().read_line(&mut junk).expect("Can't wait for newline from stdin");
 }
 
+fn ask(question: &str) -> String {
+    let mut reply = String::new();
+    print!("{}: ", question);
+    io::stdout().flush().ok().expect("Can't flush stdout");
+    io::stdin().read_line(&mut reply).expect("Can't wait for newline from stdin");
+    return reply.trim_right().to_string();
+}
+
 fn clipboard_copy(user: &str, pass: &str) {
     let mut ctx: ClipboardContext = ClipboardProvider::new().expect("Can't obtain clipboard context");
 
@@ -169,15 +254,43 @@ fn clipboard_copy(user: &str, pass: &str) {
     ctx.set_contents("".to_owned()).expect("Can't clear clipboard");
 }
 
-fn run_op(kc: &keychain::V3, op: &Vec<String>) -> bool {
+fn run_op(db_path: &str, op: &Vec<String>) -> bool {
     match op[0].as_ref() {
-        "list" => op_list(kc, &op[1..]),
-        "copy" => op_copy(kc, &op[1..]),
-        "show" => op_show(kc, &op[1..]),
+        "new" => op_new(db_path),
+        "passwd" => op_passwd(db_path),
+        "add" => op_add(db_path),
+        "list" => {
+            match keychain::V3::open(&db_path, &ask_password("Password: ")) {
+                Some(kc) => op_list(&kc, &op[1..]),
+                None => {},
+            }
+        },
+        "copy" => {
+            match keychain::V3::open(&db_path, &ask_password("Password: ")) {
+                Some(kc) => op_copy(&kc, &op[1..]),
+                None => {},
+            }
+        },
+        "show" => {
+            match keychain::V3::open(&db_path, &ask_password("Password: ")) {
+                Some(kc) => op_show(&kc, &op[1..]),
+                None => {},
+            }
+        },
         _ => return false,
     }
 
     return true;
+}
+
+fn ask_password(query: &str) -> String {
+    if unsafe { STDIN_PASSWORD } {
+        let mut password = String::new();
+        io::stdin().read_line(&mut password).expect("Can't read password from stdin");
+        return password.trim_right().to_string();
+    } else {
+        return rpassword::prompt_password_stdout(query).expect("Can't query password");
+    }
 }
 
 fn main() {
@@ -197,6 +310,10 @@ fn main() {
         return;
     }
 
+    unsafe {
+        STDIN_PASSWORD = matches.opt_present("S");
+    }
+
     let db_path = match matches.opt_str("p") {
         Some(p) => p,
         None => {
@@ -207,20 +324,7 @@ fn main() {
         },
     };
 
-    let mut password = String::new();
-    if matches.opt_present("S") {
-        io::stdin().read_line(&mut password).expect("Can't read password from stdin");
-        password = password.trim_right().to_string();
-    } else {
-        password = rpassword::prompt_password_stdout("Password: ").expect("Can't query password");
-    }
-
-    match keychain::V3::new(&db_path, &password) {
-        Some(kc) => {
-            if !run_op(&kc, &matches.free) {
-                print_usage(&exe, opts);
-            }
-        },
-        None => {},
+    if !run_op(&db_path, &matches.free) {
+        print_usage(&exe, opts);
     }
 }

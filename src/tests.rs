@@ -1,29 +1,30 @@
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::collections::HashMap;
     use item;
 
     #[test]
     fn invalid_db_path() {
-        let kc = ::keychain::V3::new("invalid_db_path", "invalid_password");
+        let kc = ::keychain::V3::open("invalid_db_path", "invalid_password");
         assert_eq!(kc.is_some(), false);
     }
 
     #[test]
     fn invalid_db_password() {
-        let kc = ::keychain::V3::new("simple.psafe3", "invalid_password");
+        let kc = ::keychain::V3::open("simple.psafe3", "invalid_password");
         assert_eq!(kc.is_some(), false);
     }
 
     #[test]
     fn valid_db_password() {
-        let kc = ::keychain::V3::new("simple.psafe3", "bogus12345");
+        let kc = ::keychain::V3::open("simple.psafe3", "bogus12345");
         assert_eq!(kc.is_some(), true);
     }
 
     #[test]
     fn valid_db_size() {
-        let kc = ::keychain::V3::new("simple.psafe3", "bogus12345").expect("Invalid password");
+        let kc = ::keychain::V3::open("simple.psafe3", "bogus12345").expect("Invalid password");
         assert_eq!(kc.len(), 9);
     }
 
@@ -150,9 +151,8 @@ mod tests {
         };
     }
 
-    #[test]
-    fn valid_db_contents() {
-        let kc = ::keychain::V3::new("simple.psafe3", "bogus12345").expect("Invalid password");
+    fn validate(path: &str, password: &str) {
+        let kc = ::keychain::V3::open(path, password).expect("Invalid password");
 
         let mut z = 0;
         for i in kc.iter() {
@@ -167,5 +167,32 @@ mod tests {
         }
 
         assert_eq!(kc.len(), 9);
+    }
+
+    #[test]
+    fn valid_db_contents() {
+        validate("simple.psafe3", "bogus12345");
+    }
+
+    #[test]
+    fn save() {
+        let path = "simple2.psafe3";
+
+        fs::remove_file(path).ok();
+
+        let mut kc = ::keychain::V3::new(path);
+
+        for i in ITEMS.iter() {
+            let mut item = item::new();
+
+            for (&k, ref v) in i.iter() {
+                item.insert(k, v);
+            }
+
+            kc.insert(item);
+        }
+
+        kc.save("bogus12345");
+        validate("simple2.psafe3", "bogus12345");
     }
 }

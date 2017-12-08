@@ -21,6 +21,12 @@ impl HMAC {
     pub fn verify(&mut self, expected: &[u8]) -> Result<(), gcrypt::Error> {
         return self.mac.verify(expected);
     }
+
+    pub fn get_mac(&mut self) -> [u8; 32] {
+        let mut output: [u8; 32] = [0; 32];
+        self.mac.get_mac(&mut output).expect("Can't compute HMAC");
+        return output;
+    }
 }
 
 pub fn init() {
@@ -78,4 +84,25 @@ pub fn decrypt_inplace(data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<(), gcr
     c.set_iv(iv).expect("Can't set CBC Twofish IV");
     c.set_key(key).expect("Can't set CBC Twofish key");
     return c.decrypt_inplace(data);
+}
+
+pub fn encrypt_block_ecb(block: &[u8], key: &[u8]) -> Result<[u8; 32], gcrypt::Error> {
+    use self::gcrypt::cipher::{Cipher, Algorithm, Mode};
+
+    let mut ct: [u8; 32] = [0; 32];
+    let mut c = Cipher::new(Algorithm::Twofish, Mode::Ecb).expect("Can't initialize ECB Twofish");
+    c.set_key(&key).expect("Can't set ECB Twofish key");
+    return match c.encrypt(&block, &mut ct) {
+        Ok(_) => Ok(ct.clone()),
+        Err(e) => Err(e),
+    };
+}
+
+pub fn encrypt_inplace(data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<(), gcrypt::Error> {
+    use self::gcrypt::cipher::{Cipher, Algorithm, Mode};
+
+    let mut c = Cipher::new(Algorithm::Twofish, Mode::Cbc).expect("Can't initialize CBC Twofish");
+    c.set_iv(iv).expect("Can't set CBC Twofish IV");
+    c.set_key(key).expect("Can't set CBC Twofish key");
+    return c.encrypt_inplace(data);
 }

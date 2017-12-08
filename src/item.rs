@@ -4,7 +4,7 @@ use std::io::SeekFrom;
 use std::io::Read;
 use std::io::prelude::*;
 use std::collections::HashMap;
-use byteorder::{ReadBytesExt, LittleEndian};
+use byteorder::{WriteBytesExt, ReadBytesExt, LittleEndian};
 
 use crypto;
 
@@ -82,6 +82,25 @@ lazy_static! {
         m.insert(0xff, Def{kind: Kind::End,             tp: Type::Raw   });
         m
     };
+
+    pub static ref FIELD_TYPE: HashMap<Kind,u8> = {
+        let mut m = HashMap::new();
+        for (&tp, def) in HEADER.iter() {
+            m.insert(def.kind, tp);
+        }
+        for (&tp, def) in DATA.iter() {
+            m.insert(def.kind, tp);
+        }
+        m
+    };
+
+    pub static ref FIELD_END: Field = Field {
+        def: Def {
+            kind: Kind::End,
+            tp: Type::Raw,
+        },
+        data: Data::Raw(Vec::new()),
+    };
 }
 
 #[derive(PartialEq,Eq,Hash,Debug,Clone)]
@@ -97,6 +116,32 @@ pub enum Data {
 pub struct Field {
     pub def: Def,
     pub data: Data,
+}
+
+impl Field {
+    pub fn serialize(&self, c: &mut Cursor<Vec<u8>>, mac: &mut crypto::HMAC) {
+        let mut vc = Cursor::new(Vec::new());
+
+        match self.data {
+            // TODO: serialize raw
+            Data::Raw(ref _v) => (),
+            Data::Byte(v) => vc.write_u8(v).expect("Can't serialize byte"),
+            Data::Short(v) => vc.write_u16::<LittleEndian>(v).expect("Can't serialize short"),
+            Data::Int(v) => vc.write_u32::<LittleEndian>(v).expect("Can't serialize int"),
+            Data::Text(ref v) => vc.write_all(&v[..].as_bytes()).expect("Can't serialize text"),
+        }
+
+        mac.update(&vc.get_ref()[..]);
+
+        let len = vc.position();
+        add_padding(&mut vc, len);
+
+        let tp = FIELD_TYPE[&self.def.kind];
+
+        c.write_u32::<LittleEndian>(len as u32).expect("Can't serialize field length");
+        c.write_u8(tp).expect("Can't serialize field type");
+        c.write_all(&vc.get_ref()[..]).expect("Can't serialize field data");
+    }
 }
 
 impl ToString for Field {
@@ -125,6 +170,28 @@ impl Item {
             Some(v) => return Some(&v.data),
         }
     }
+
+    pub fn insert(&mut self, kind: Kind, data: &Data) {
+        for (_, def) in DATA.iter() {
+            if def.kind == kind {
+                let data = data.clone();
+                let def = def.clone();
+                self.field.insert(kind, Field{def, data});
+                return;
+            }
+        }
+    }
+
+    pub fn serialize(&self, c: &mut Cursor<Vec<u8>>, mac: &mut crypto::HMAC) {
+        for (_, field) in &self.field {
+            field.serialize(c, mac);
+        }
+    }
+}
+
+pub fn new() -> Item {
+    let m = HashMap::new();
+    return Item{field: m};
 }
 
 fn new_field(map: &HashMap<u8,Def>, val: u8, data: &[u8]) -> Field {
@@ -168,6 +235,15 @@ fn new_field(map: &HashMap<u8,Def>, val: u8, data: &[u8]) -> Field {
                         data: Data::Raw(data.to_vec()),
                     },
             }
+        }
+    }
+}
+
+fn add_padding(c: &mut Cursor<Vec<u8>>, len: u64) {
+    let rem = 16 - (5 + len) % 16;
+    if rem < 16 {
+        for _ in 0..rem {
+            c.write_u8(0).expect("Can't serialize byte");
         }
     }
 }

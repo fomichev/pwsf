@@ -4,8 +4,10 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Cursor;
 use std::io::Read;
-use byteorder::{ReadBytesExt, LittleEndian};
+use std::io::Write;
+use byteorder::{ReadBytesExt, LittleEndian, WriteBytesExt};
 use regex::Regex;
+use rand::{OsRng, Rng};
 
 use crypto;
 use item;
@@ -20,7 +22,7 @@ pub struct V3 {
 }
 
 impl V3 {
-    pub fn new(path: &str, password: &str) -> Option<V3> {
+    pub fn open(path: &str, password: &str) -> Option<V3> {
         crypto::init();
 
         let mut kc = V3 {
@@ -75,6 +77,158 @@ impl V3 {
             }
             _ => return None,
         }
+    }
+
+    pub fn save(&mut self, password: &str) -> bool {
+        let mut rng = match OsRng::new() {
+            Ok(g) => g,
+            Err(e) => {
+                eprintln!("Can't obtain secure RNG: {}", e.description());
+                return false;
+            }
+        };
+
+        let mut f = match File::create(&self.path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Can't open database at '{}': {}", self.path, e.description());
+                return false;
+            }
+        };
+
+        match f.write_all(b"PWS3") {
+            Err(e) => {
+                eprintln!("Can't write tag: {}", e.description());
+                return false;
+            }
+            _ => (),
+        }
+
+        rng.fill_bytes(&mut self.salt);
+
+        match f.write_all(&self.salt) {
+            Err(e) => {
+                eprintln!("Can't write salt: {}", e.description());
+                return false;
+            },
+            _ => (),
+        };
+
+        match f.write_u32::<LittleEndian>(self.iter) {
+            Err(e) => {
+                eprintln!("Can't write number of password iterations: {}", e.description());
+                return false;
+            },
+            _ => (),
+        };
+
+        // stretch password
+        let stretched = crypto::stretch(password, &self.salt, self.iter);
+
+        match f.write_all(&crypto::sha256(&stretched)) {
+            Err(e) => {
+                eprintln!("Can't write hash of a stretched password: {}", e.description());
+                return false;
+            }
+            _ => (),
+        }
+
+        // generate and write all initial settings
+        let mut k: [u8; 32] = [0; 32];
+        rng.fill_bytes(&mut k);
+
+        let mut l: [u8; 32] = [0; 32];
+        rng.fill_bytes(&mut l);
+
+        let b12 = match crypto::encrypt_block_ecb(&k, &stretched) {
+            Ok(k) => k,
+            Err(e) => {
+                eprintln!("Can't encrypt K: {}", e.description());
+                return false;
+            },
+        };
+
+        let b34 = match crypto::encrypt_block_ecb(&l, &stretched) {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("Can't encrypt L: {}", e.description());
+                return false;
+            },
+        };
+
+        match f.write_all(&b12) {
+            Err(e) => {
+                eprintln!("Can't write K: {}", e.description());
+                return false;
+            }
+            _ => (),
+        }
+
+        match f.write_all(&b34) {
+            Err(e) => {
+                eprintln!("Can't write L: {}", e.description());
+                return false;
+            }
+            _ => (),
+        }
+
+        let mut iv: [u8; 16] = [0; 16];
+        rng.fill_bytes(&mut iv);
+
+        match f.write_all(&iv) {
+            Err(e) => {
+                eprintln!("Can't write IV: {}", e.description());
+                return false;
+            }
+            _ => (),
+        }
+
+        let mut mac = crypto::HMAC::new(&l);
+        let mut c = Cursor::new(Vec::new());
+
+        // TODO: header
+        item::FIELD_END.serialize(&mut c, &mut mac);
+
+        self.each(&mut |_: &str, i: &item::Item| {
+            i.serialize(&mut c, &mut mac);
+            item::FIELD_END.serialize(&mut c, &mut mac);
+        });
+
+        let data = c.get_mut();
+        let bytes = &mut data[..];
+        match crypto::encrypt_inplace(bytes, &k, &iv) {
+            Err(e) => {
+                eprintln!("Can't encrypt data: {}", e.description());
+                return false;
+            }
+            _ => (),
+        }
+
+        match f.write_all(bytes) {
+            Err(e) => {
+                eprintln!("Can't write data: {}", e.description());
+                return false;
+            }
+            _ => (),
+        }
+
+        match f.write_all(b"PWS3-EOFPWS3-EOF") {
+            Err(e) => {
+                eprintln!("Can't write EOF: {}", e.description());
+                return false;
+            }
+            _ => (),
+        }
+
+        match f.write_all(&mac.get_mac()) {
+            Err(e) => {
+                eprintln!("Can't write MAC: {}", e.description());
+                return false;
+            }
+            _ => (),
+        }
+
+        return true;
     }
 
     fn unlock(&mut self, password: &str) -> bool {
@@ -256,5 +410,21 @@ impl V3 {
                 f(name, i);
             }
         });
+    }
+
+    pub fn insert(&mut self, item: item::Item) {
+        self.items.push(item);
+    }
+
+    pub fn new(path: &str) -> V3 {
+        crypto::init();
+
+        return V3 {
+            path: path.to_string(),
+            salt: [0; 32],
+            iter: 100000,
+            header: None,
+            items: Vec::new(),
+        };
     }
 }
