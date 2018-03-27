@@ -4,7 +4,7 @@ format of the https://pwsafe.org.
 # Installation
 
 ```
-go get github.com/fomichev/pwsf-go
+go get github.com/fomichev/pwsf
 ```
 
 # Usage example
