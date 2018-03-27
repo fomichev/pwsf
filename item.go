@@ -71,6 +71,12 @@ type Item struct {
 	Fields map[FieldType]*Field // Map of filed type to field.
 }
 
+type ByName []*Item
+
+func (a ByName) Len() int           { return len(a) }
+func (a ByName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByName) Less(i, j int) bool { return a[i].String() < a[j].String() }
+
 // ReadItem parses item fields from the reader and updates HMAC.
 func ReadItem(r io.Reader, mac hash.Hash) (*Item, error) {
 	var i Item

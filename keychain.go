@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"os"
 	"regexp"
+	"sort"
 )
 
 // Keychain represents parsed PasswordSafe data file.
@@ -155,7 +156,7 @@ func (c *Keychain) parseItems(r io.Reader, mac hash.Hash) error {
 		c.Items = append(c.Items, i)
 	}
 
-	// TODO: sort items by name
+	sort.Sort(ByName(c.Items))
 
 	return nil
 }
