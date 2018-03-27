@@ -101,6 +101,10 @@ func unlockKeychain(stdin bool, path string) *Keychain {
 	return kc
 }
 
+func argsToRE(args []string) string {
+	return "(?i)" + strings.Join(args[1:], " ")
+}
+
 func main() {
 	flag.Usage = func() {
 		if err := helpTmpl.Execute(flag.CommandLine.Output(), filepath.Base(os.Args[0])); err != nil {
@@ -121,13 +125,13 @@ func main() {
 	switch cmd {
 	case "list":
 		kc := unlockKeychain(*stdin, *path)
-		re := strings.Join(args[1:], " ")
+		re := argsToRE(args)
 		for i := range kc.Find(re) {
 			fmt.Println(i)
 		}
 	case "show":
 		kc := unlockKeychain(*stdin, *path)
-		re := strings.Join(args[1:], " ")
+		re := argsToRE(args)
 		for i := range kc.Find(re) {
 			fmt.Println(i)
 
@@ -143,7 +147,7 @@ func main() {
 		}
 	case "copy":
 		kc := unlockKeychain(*stdin, *path)
-		re := strings.Join(args[1:], " ")
+		re := argsToRE(args)
 		var a []*Item
 		for i := range kc.Find(re) {
 			a = append(a, i)
