@@ -89,6 +89,7 @@ func unlockKeychain(stdin bool, path string) *Keychain {
 		if err != nil {
 			log.Fatal("Can't read password: ", err)
 		}
+		fmt.Println("")
 		pwd = string(t)
 	}
 	kc, err := NewKeychain(expandHome(path))
